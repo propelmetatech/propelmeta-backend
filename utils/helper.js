@@ -7,11 +7,14 @@ const {
   JWE_ALGORITHM,
 } = require("../utils/constants");
 
+const createIssuedAt = () => Date.now();
+const createExpiry = () => Date.now() + TOKEN_EXPIRY_TIME_IN_MILLISECONDS;
+
 exports.generateDigestObject = ({ payload }) => ({
   digest: crypto.createHash("sha256").update(payload).digest("base64"),
   digestAlgorithm: DIGEST_ALGORITHM,
-  exp: TOKEN_EXPIRY_TIME_IN_MILLISECONDS,
-  iat: `${Date.now()}`,
+  exp: createExpiry(),
+  iat: createIssuedAt(),
 });
 
 exports.generateJWSHeaderObject = ({ merchantId, kid }) => ({
@@ -26,8 +29,8 @@ exports.generateJWSHeaderObject = ({ merchantId, kid }) => ({
 exports.generateJWEHeaderObject = ({ merchantId, kid }) => ({
   "issued-by": merchantId,
   enc: JWE_ENCRYPTION_METHOD,
-  exp: TOKEN_EXPIRY_TIME_IN_MILLISECONDS,
-  iat: `${Date.now()}`,
+  exp: createExpiry(),
+  iat: createIssuedAt(),
   alg: JWE_ALGORITHM,
   kid,
 });

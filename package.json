@@ -1,10 +1,13 @@
 {
   "name": "payglocal-js-client",
   "version": "1.0.0",
-  "description": "",
+  "description": "Helper function to encrypt your data and create a JWE and JWS token",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "si:test": "node examples/si-paycollect-test.js",
+    "callback:test": "node examples/callback-server.js",
+    "subscription:demo": "node examples/subscription-frontend-server.js"
   },
   "author": "",
   "license": "MIT",

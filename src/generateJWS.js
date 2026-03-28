@@ -1,4 +1,5 @@
 const { importPKCS8, CompactSign } = require("jose");
+const { JWS_ALGORITHM } = require('../utils/constants');
 const { generateDigestObject, generateJWSHeaderObject } = require('../utils/helper');
 
 /**
@@ -11,7 +12,7 @@ const { generateDigestObject, generateJWSHeaderObject } = require('../utils/help
  */
 module.exports = async ({ payload, privateKey, merchantId, privateKeyId }) => {
 
-  const cryptoPrivateKey = await importPKCS8(privateKey);
+  const cryptoPrivateKey = await importPKCS8(privateKey, JWS_ALGORITHM);
   const digestObject = generateDigestObject({ payload });
   const headerObject = generateJWSHeaderObject({ merchantId, kid: privateKeyId });
 
