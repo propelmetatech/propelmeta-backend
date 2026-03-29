@@ -94,9 +94,17 @@ function formatDateYYYYMMDD(date) {
   return `${year}${month}${day}`;
 }
 
-function getDefaultStartDate() {
-  const nextDay = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  return formatDateYYYYMMDD(nextDay);
+function getDefaultStartDate(startDayOfMonth = 4) {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const targetDay = Math.max(1, Math.min(28, Number(startDayOfMonth) || 4));
+  const currentMonthDate = new Date(Date.UTC(year, monthIndex, targetDay));
+  const startDate =
+    now <= currentMonthDate
+      ? currentMonthDate
+      : new Date(Date.UTC(year, monthIndex + 1, targetDay));
+  return formatDateYYYYMMDD(startDate);
 }
 
 function parseAllowedOrigins(value) {
@@ -343,11 +351,11 @@ const config = {
   monthlyStartDate:
     process.env.PAYGLOCAL_MONTHLY_START_DATE ||
     process.env.PAYGLOCAL_START_DATE ||
-    getDefaultStartDate(),
+    getDefaultStartDate(process.env.PAYGLOCAL_START_DAY),
   yearlyStartDate:
     process.env.PAYGLOCAL_YEARLY_START_DATE ||
     process.env.PAYGLOCAL_START_DATE ||
-    getDefaultStartDate(),
+    getDefaultStartDate(process.env.PAYGLOCAL_START_DAY),
   verifyCallbackSignature: parseBoolean(
     process.env.VERIFY_CALLBACK_SIGNATURE,
     true,
