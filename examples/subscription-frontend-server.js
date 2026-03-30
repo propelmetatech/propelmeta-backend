@@ -360,6 +360,7 @@ const config = {
     process.env.VERIFY_CALLBACK_SIGNATURE,
     true,
   ),
+  storeTransactions: parseBoolean(process.env.STORE_TRANSACTIONS, true),
   allowedOrigins: parseAllowedOrigins(process.env.ALLOWED_ORIGIN),
   transactionStorePath:
     process.env.TRANSACTION_STORE_PATH ||
@@ -433,7 +434,9 @@ validateConfig();
 
 const privateKey = readPem(config.privateKeyPath);
 const publicKey = readPem(config.publicKeyPath);
-const transactionStore = new TransactionStore(config.transactionStorePath);
+const transactionStore = config.storeTransactions
+  ? new TransactionStore(config.transactionStorePath)
+  : null;
 let payglocalVerificationKeyPromise = null;
 
 function getVerificationKey() {
@@ -552,18 +555,20 @@ async function initiateSubscription(body) {
   const now = new Date().toISOString();
   const payload = buildSubscriptionPayload(merchantTxnId, billingCycle, chargeAmount);
 
-  transactionStore.upsert({
-    merchantTxnId,
-    customerId,
-    tier,
-    billingCycle,
-    chargeAmount,
-    txnCurrency: config.txnCurrency,
-    status: 'INITIATE_REQUESTED',
-    callbackUrl: config.callbackUrl,
-    createdAt: now,
-    updatedAt: now,
-  });
+  if (transactionStore) {
+    transactionStore.upsert({
+      merchantTxnId,
+      customerId,
+      tier,
+      billingCycle,
+      chargeAmount,
+      txnCurrency: config.txnCurrency,
+      status: 'INITIATE_REQUESTED',
+      callbackUrl: config.callbackUrl,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 
   try {
     const { jweToken, jwsToken } = await generateJWEAndJWS({
@@ -602,13 +607,21 @@ async function initiateSubscription(body) {
           : parsedBody?.message ||
             `PayGlocal initiate failed with status ${response.status}.`;
 
-      transactionStore.upsert({
+      console.error('PayGlocal initiate failed:', {
         merchantTxnId,
-        status: 'INITIATE_FAILED',
-        updatedAt: new Date().toISOString(),
-        initiateResponse: parsedBody,
-        lastError: errorMessage,
+        status: response.status,
+        body: parsedBody,
       });
+
+      if (transactionStore) {
+        transactionStore.upsert({
+          merchantTxnId,
+          status: 'INITIATE_FAILED',
+          updatedAt: new Date().toISOString(),
+          initiateResponse: parsedBody,
+          lastError: errorMessage,
+        });
+      }
 
       throw new Error(errorMessage);
     }
@@ -617,26 +630,30 @@ async function initiateSubscription(body) {
     const statusUrl = parsedBody?.data?.statusUrl || null;
 
     if (!redirectUrl) {
-      transactionStore.upsert({
-        merchantTxnId,
-        status: 'INITIATE_FAILED',
-        updatedAt: new Date().toISOString(),
-        initiateResponse: parsedBody,
-        lastError: 'PayGlocal did not return redirectUrl.',
-      });
+      if (transactionStore) {
+        transactionStore.upsert({
+          merchantTxnId,
+          status: 'INITIATE_FAILED',
+          updatedAt: new Date().toISOString(),
+          initiateResponse: parsedBody,
+          lastError: 'PayGlocal did not return redirectUrl.',
+        });
+      }
 
       throw new Error('PayGlocal did not return a redirect URL.');
     }
 
-    transactionStore.upsert({
-      merchantTxnId,
-      status: 'INITIATED',
-      updatedAt: new Date().toISOString(),
-      redirectUrl,
-      statusUrl,
-      initiateResponse: parsedBody,
-      lastError: null,
-    });
+    if (transactionStore) {
+      transactionStore.upsert({
+        merchantTxnId,
+        status: 'INITIATED',
+        updatedAt: new Date().toISOString(),
+        redirectUrl,
+        statusUrl,
+        initiateResponse: parsedBody,
+        lastError: null,
+      });
+    }
 
     return {
       ok: true,
@@ -645,12 +662,14 @@ async function initiateSubscription(body) {
       statusUrl,
     };
   } catch (error) {
-    transactionStore.upsert({
-      merchantTxnId,
-      status: 'INITIATE_FAILED',
-      updatedAt: new Date().toISOString(),
-      lastError: error.message || 'Unable to start subscription.',
-    });
+    if (transactionStore) {
+      transactionStore.upsert({
+        merchantTxnId,
+        status: 'INITIATE_FAILED',
+        updatedAt: new Date().toISOString(),
+        lastError: error.message || 'Unable to start subscription.',
+      });
+    }
     throw error;
   }
 }
@@ -697,18 +716,20 @@ async function handleCallback(request, response, url) {
     return;
   }
 
-  const existing = transactionStore.get(merchantTxnId) || {};
-  transactionStore.upsert({
-    ...existing,
-    merchantTxnId,
-    gid,
-    status,
-    callbackVerified: decodedResult.verified,
-    callbackReceivedAt: now,
-    callbackPayload,
-    updatedAt: now,
-    lastError: reason,
-  });
+  const existing = transactionStore ? transactionStore.get(merchantTxnId) || {} : {};
+  if (transactionStore) {
+    transactionStore.upsert({
+      ...existing,
+      merchantTxnId,
+      gid,
+      status,
+      callbackVerified: decodedResult.verified,
+      callbackReceivedAt: now,
+      callbackPayload,
+      updatedAt: now,
+      lastError: reason,
+    });
+  }
 
   console.log('Callback received:', {
     merchantTxnId,
@@ -768,7 +789,7 @@ async function handleRequest(request, response) {
         env: process.env.NODE_ENV || 'development',
         verifyCallbackSignature: config.verifyCallbackSignature,
         callbackPath: new URL(config.callbackUrl).pathname,
-        transactionCount: transactionStore.size(),
+        transactionCount: transactionStore ? transactionStore.size() : null,
       },
       corsOrigin,
     );
@@ -787,6 +808,16 @@ async function handleRequest(request, response) {
         response,
         400,
         { ok: false, message: 'merchantTxnId query parameter is required.' },
+        corsOrigin,
+      );
+      return;
+    }
+
+    if (!transactionStore) {
+      sendJson(
+        response,
+        400,
+        { ok: false, message: 'Transaction storage is disabled.' },
         corsOrigin,
       );
       return;
@@ -878,7 +909,11 @@ server.listen(config.port, config.host, () => {
     `Frontend should POST http://${config.host}:${config.port}/api/subscriptions/initiate`,
   );
   console.log(`Callback URL configured as: ${config.callbackUrl}`);
-  console.log(`Transaction store: ${config.transactionStorePath}`);
+  console.log(
+    `Transaction store: ${
+      transactionStore ? config.transactionStorePath : 'disabled'
+    }`,
+  );
   console.log(
     `Callback signature verification: ${
       config.verifyCallbackSignature ? 'enabled' : 'disabled'
