@@ -3,7 +3,7 @@ const path = require('node:path');
 const { generateJWEAndJWS } = require('../index');
 const loadEnv = require('../utils/loadEnv');
 
-const DEFAULT_CALLBACK_URL = 'http://localhost:3001/callbackurl';
+const DEFAULT_CALLBACK_URL = 'https://propelmetatech.com/callbackurl';
 
 loadEnv(path.resolve(__dirname, '../.env'));
 
