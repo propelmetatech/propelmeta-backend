@@ -888,14 +888,41 @@ async function handleRequest(request, response) {
   sendJson(response, 404, { ok: false, message: 'Not found.' }, corsOrigin);
 }
 
+// const server = http.createServer((request, response) => {
+//   void handleRequest(request, response).catch((error) => {
+//     console.error('Server error:', error.message);
+//     if (!response.headersSent) {
+//       sendJson(response, 500, { ok: false, message: 'Internal server error.' });
+//       return;
+//     }
+
+//     response.end();
+//   });
+// });
+
 const server = http.createServer((request, response) => {
+ 
+  console.log("Incoming request:", request.method, request.url); 
+ 
+  response.setHeader("Access-Control-Allow-Origin", "https://propelmetatech.com");
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.setHeader("Access-Control-Allow-Credentials", "true");
+ 
+  if (request.method === "OPTIONS") {
+    console.log("OPTIONS request handled"); 
+    response.writeHead(200);
+    response.end();
+    return;
+  }
+ 
   void handleRequest(request, response).catch((error) => {
     console.error('Server error:', error.message);
     if (!response.headersSent) {
       sendJson(response, 500, { ok: false, message: 'Internal server error.' });
       return;
     }
-
+ 
     response.end();
   });
 });
