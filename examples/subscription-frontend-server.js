@@ -251,15 +251,11 @@ function readRequestBody(request, maxBodySizeBytes) {
 }
 
 function getAllowedCorsOrigin(requestOrigin, allowedOrigins) {
-  if (!requestOrigin) {
-    return null;
-  }
-
-  if (allowedOrigins.includes('*')) {
-    return requestOrigin;
-  }
-
-  return allowedOrigins.includes(requestOrigin) ? requestOrigin : null;
+  if (!requestOrigin) return null;
+ 
+  return allowedOrigins.find(origin =>
+    requestOrigin.replace(/\/$/, '') === origin.replace(/\/$/, '')
+  ) || null;
 }
 
 function setCorsHeaders(response, corsOrigin) {
@@ -904,7 +900,7 @@ const server = http.createServer((request, response) => {
  
   console.log("Incoming request:", request.method, request.url); 
  
-  response.setHeader("Access-Control-Allow-Origin", "https://propelmetatech.com");
+response.setHeader("Access-Control-Allow-Origin", "https://propelmetatech.com");
   response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   response.setHeader("Access-Control-Allow-Credentials", "true");
