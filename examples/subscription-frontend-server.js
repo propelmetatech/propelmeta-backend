@@ -575,6 +575,16 @@ async function initiateSubscription(body) {
       publicKeyId: config.publicKeyId,
       privateKeyId: config.privateKeyId,
     });
+    console.log(jweToken,jwsToken)
+    console.log(
+      payload,
+      publicKey,
+      privateKey,
+      merchantId,
+      publicKeyId,
+      privateKeyId
+    )
+
 
     console.log('Initiating subscription:', {
       merchantTxnId,
@@ -582,7 +592,7 @@ async function initiateSubscription(body) {
       billingCycle,
       amount: chargeAmount,
       txnCurrency: config.txnCurrency,
-    });
+    });        
 
     const response = await fetch(config.initiateUrl, {
       method: 'POST',
