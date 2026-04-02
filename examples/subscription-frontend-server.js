@@ -579,10 +579,7 @@ async function initiateSubscription(body) {
     console.log(
       payload,
       publicKey,
-      privateKey,
-      merchantId,
-      publicKeyId,
-      privateKeyId
+      privateKey
     )
 
 
