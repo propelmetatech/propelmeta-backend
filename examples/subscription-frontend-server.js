@@ -575,12 +575,14 @@ async function initiateSubscription(body) {
       publicKeyId: config.publicKeyId,
       privateKeyId: config.privateKeyId,
     });
-    console.log(jweToken,jwsToken)
-    console.log(
-      payload,
-      publicKey,
-      privateKey
-    )
+    console.log(`JWE Token: ${jweToken}`)
+    console.log(`JWS Token: ${jwsToken}`)
+    console.log("Private Key ID:", config.privateKeyId);
+    console.log("public Key ID:", config.publicKeyId);
+    console.log("Merchant ID:", config.merchantId);
+    console.log("public Key:", publicKey);
+    console.log("private Key:", privateKey);
+
 
 
     console.log('Initiating subscription:', {
