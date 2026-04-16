@@ -62,6 +62,10 @@ function readPem(filePath) {
   return fs.readFileSync(path.resolve(filePath), 'utf8');
 }
 
+function normalizePem(value) {
+  return String(value || '').replace(/\\n/g, '\n').trim();
+}
+
 function parsePositiveInteger(value, fallbackValue) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -112,6 +116,10 @@ function parseAllowedOrigins(value) {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
+}
+
+function normalizeOrigin(origin) {
+  return String(origin || '').trim().replace(/\/$/, '');
 }
 
 function isLocalHost(hostname) {
@@ -251,11 +259,36 @@ function readRequestBody(request, maxBodySizeBytes) {
 }
 
 function getAllowedCorsOrigin(requestOrigin, allowedOrigins) {
-  if (!requestOrigin) return null;
- 
-  return allowedOrigins.find(origin =>
-    requestOrigin.replace(/\/$/, '') === origin.replace(/\/$/, '')
-  ) || null;
+  const normalizedOrigin = normalizeOrigin(requestOrigin);
+  if (!normalizedOrigin) {
+    return null;
+  }
+
+  if (allowedOrigins.includes('*')) {
+    return normalizedOrigin;
+  }
+
+  const hasConfiguredMatch = allowedOrigins.some(
+    (origin) => normalizeOrigin(origin) === normalizedOrigin,
+  );
+  if (hasConfiguredMatch) {
+    return normalizedOrigin;
+  }
+
+  try {
+    const parsedOrigin = new URL(normalizedOrigin);
+    const isLoopbackRequest =
+      ['http:', 'https:'].includes(parsedOrigin.protocol) &&
+      isLocalHost(parsedOrigin.hostname);
+
+    if (process.env.NODE_ENV !== 'production' && isLoopbackRequest) {
+      return normalizedOrigin;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function setCorsHeaders(response, corsOrigin) {
@@ -265,7 +298,11 @@ function setCorsHeaders(response, corsOrigin) {
 
   response.setHeader('Access-Control-Allow-Origin', corsOrigin);
   response.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With',
+  );
+  response.setHeader('Access-Control-Allow-Credentials', 'true');
   response.setHeader('Vary', 'Origin');
 }
 
@@ -319,7 +356,7 @@ function decodeJwtPayloadWithoutVerification(token) {
 
 const config = {
   host: process.env.HOST || '0.0.0.0',
-  port: parsePositiveInteger(process.env.PORT, 3001),
+  port: parsePositiveInteger(process.env.PORT, 3002),
   requestTimeoutMs: parsePositiveInteger(process.env.REQUEST_TIMEOUT_MS, 30000),
   headersTimeoutMs: parsePositiveInteger(process.env.HEADERS_TIMEOUT_MS, 35000),
   maxBodySizeBytes: parsePositiveInteger(process.env.MAX_BODY_SIZE_BYTES, 1048576),
@@ -327,8 +364,8 @@ const config = {
   merchantId: requireEnv('PAYGLOCAL_MERCHANT_ID'),
   privateKeyId: requireEnv('PAYGLOCAL_PRIVATE_KEY_ID'),
   publicKeyId: requireEnv('PAYGLOCAL_PUBLIC_KEY_ID'),
-  privateKeyPath: requireEnv('PAYGLOCAL_PRIVATE_KEY_PATH'),
-  publicKeyPath: requireEnv('PAYGLOCAL_PUBLIC_KEY_PATH'),
+  privateKey: requireEnv('PAYGLOCAL_PRIVATE_KEY'),
+  publicKey: requireEnv('PAYGLOCAL_PUBLIC_KEY'),
   callbackUrl: requireEnv('PAYGLOCAL_CALLBACK_URL'),
   successRedirectUrl: requireEnv('SUCCESS_REDIRECT_URL'),
   failureRedirectUrl: requireEnv('FAILURE_REDIRECT_URL'),
@@ -366,13 +403,13 @@ const config = {
 function validateConfig() {
   const errors = [];
 
-  if (!fs.existsSync(path.resolve(config.privateKeyPath))) {
-    errors.push(`PAYGLOCAL_PRIVATE_KEY_PATH does not exist: ${config.privateKeyPath}`);
-  }
+  // if (!fs.existsSync(path.resolve(config.privateKeyPath))) {
+  //   errors.push(`PAYGLOCAL_PRIVATE_KEY_PATH does not exist: ${config.privateKeyPath}`);
+  // }
 
-  if (!fs.existsSync(path.resolve(config.publicKeyPath))) {
-    errors.push(`PAYGLOCAL_PUBLIC_KEY_PATH does not exist: ${config.publicKeyPath}`);
-  }
+  // if (!fs.existsSync(path.resolve(config.publicKeyPath))) {
+  //   errors.push(`PAYGLOCAL_PUBLIC_KEY_PATH does not exist: ${config.publicKeyPath}`);
+  // }
 
   if (!/^\d{8}$/.test(config.monthlyStartDate)) {
     errors.push('PAYGLOCAL_MONTHLY_START_DATE must be in YYYYMMDD format.');
@@ -428,8 +465,10 @@ function validateConfig() {
 
 validateConfig();
 
-const privateKey = readPem(config.privateKeyPath);
-const publicKey = readPem(config.publicKeyPath);
+// const privateKey = readPem(config.privateKeyPath);
+// const publicKey = readPem(config.publicKeyPath);
+const privateKey = normalizePem(config.privateKey);
+const publicKey = normalizePem(config.publicKey);
 const transactionStore = config.storeTransactions
   ? new TransactionStore(config.transactionStorePath)
   : null;
@@ -575,15 +614,18 @@ async function initiateSubscription(body) {
       publicKeyId: config.publicKeyId,
       privateKeyId: config.privateKeyId,
     });
-    console.log(`JWE Token: ${jweToken}`)
-    console.log(`JWS Token: ${jwsToken}`)
-    console.log("Private Key ID:", config.privateKeyId);
-    console.log("public Key ID:", config.publicKeyId);
-    console.log("Merchant ID:", config.merchantId);
-    console.log("public Key:", publicKey);
-    console.log("private Key:", privateKey);
 
+    console.log(
+      payload,
+      publicKey,
+      privateKey,
+      config.merchantId,
+      config.publicKeyId,
+      config.privateKeyId,
+      jweToken,
+      jwsToken
 
+    )
 
     console.log('Initiating subscription:', {
       merchantTxnId,
@@ -602,8 +644,24 @@ async function initiateSubscription(body) {
       body: jweToken,
     });
 
+    console.log(response)
+console.log("Response Status:", response.status);
+ 
+const rawBuffer = await response.arrayBuffer();
+
+const rawText = Buffer.from(rawBuffer).toString();
+ 
+console.log("RAW BODY:", rawText);
+ 
+const parsed = safeJsonParse(rawText);
+
+console.log("PARSED:", parsed);
+
+console.log("REDIRECT:", parsed?.data?.redirectUrl);
+ 
+    
     const rawBody = await response.text();
-    const parsedBody = safeJsonParse(rawBody) || rawBody;
+    const parsedBody = safeJsonParse(rawBody) || rawBody;   
 
     if (!response.ok) {
       const errorMessage =
@@ -633,7 +691,8 @@ async function initiateSubscription(body) {
 
     const redirectUrl = parsedBody?.data?.redirectUrl;
     const statusUrl = parsedBody?.data?.statusUrl || null;
-
+console.log("Parsed Body:", parsedBody);
+console.log("Redirect URL:", parsedBody?.data?.redirectUrl);
     if (!redirectUrl) {
       if (transactionStore) {
         transactionStore.upsert({
@@ -647,6 +706,7 @@ async function initiateSubscription(body) {
 
       throw new Error('PayGlocal did not return a redirect URL.');
     }
+
 
     if (transactionStore) {
       transactionStore.upsert({
@@ -893,34 +953,7 @@ async function handleRequest(request, response) {
   sendJson(response, 404, { ok: false, message: 'Not found.' }, corsOrigin);
 }
 
-// const server = http.createServer((request, response) => {
-//   void handleRequest(request, response).catch((error) => {
-//     console.error('Server error:', error.message);
-//     if (!response.headersSent) {
-//       sendJson(response, 500, { ok: false, message: 'Internal server error.' });
-//       return;
-//     }
-
-//     response.end();
-//   });
-// });
-
 const server = http.createServer((request, response) => {
- 
-  console.log("Incoming request:", request.method, request.url); 
- 
-response.setHeader("Access-Control-Allow-Origin", "https://propelmetatech.com");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  response.setHeader("Access-Control-Allow-Credentials", "true");
- 
-  if (request.method === "OPTIONS") {
-    console.log("OPTIONS request handled"); 
-    response.writeHead(200);
-    response.end();
-    return;
-  }
- 
   void handleRequest(request, response).catch((error) => {
     console.error('Server error:', error.message);
     if (!response.headersSent) {
@@ -934,6 +967,19 @@ response.setHeader("Access-Control-Allow-Origin", "https://propelmetatech.com");
 
 server.requestTimeout = config.requestTimeoutMs;
 server.headersTimeout = config.headersTimeoutMs;
+
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(
+      `Port ${config.port} is already in use. Stop the existing server or change PORT in .env.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  console.error('Server startup error:', error.message);
+  process.exitCode = 1;
+});
 
 server.listen(config.port, config.host, () => {
   console.log(`Subscription server listening on http://${config.host}:${config.port}`);

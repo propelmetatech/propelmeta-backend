@@ -12,13 +12,49 @@ function stripWrappingQuotes(value) {
   return value;
 }
 
+function readQuotedValue(lines, startIndex, rawValue) {
+  const quoteCharacter = rawValue[0];
+  let value = rawValue;
+  let index = startIndex;
+
+  while (!value.endsWith(quoteCharacter) && index + 1 < lines.length) {
+    index += 1;
+    value += `\n${lines[index]}`;
+  }
+
+  return {
+    nextIndex: index,
+    value: stripWrappingQuotes(value),
+  };
+}
+
+function readPemValue(lines, startIndex, rawValue) {
+  let value = rawValue;
+  let index = startIndex;
+
+  while (
+    !/^-----END [^-]+-----$/.test(lines[index].trim()) &&
+    index + 1 < lines.length
+  ) {
+    index += 1;
+    value += `\n${lines[index]}`;
+  }
+
+  return {
+    nextIndex: index,
+    value,
+  };
+}
+
 module.exports = function loadEnv(filePath = path.resolve(process.cwd(), '.env')) {
   if (!fs.existsSync(filePath)) {
     return;
   }
 
-  const fileContents = fs.readFileSync(filePath, 'utf8');
-  for (const line of fileContents.split(/\r?\n/)) {
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) {
       continue;
@@ -33,6 +69,23 @@ module.exports = function loadEnv(filePath = path.resolve(process.cwd(), '.env')
     const rawValue = trimmed.slice(separatorIndex + 1).trim();
 
     if (!key || process.env[key]) {
+      continue;
+    }
+
+    if (
+      (rawValue.startsWith('"') && !rawValue.endsWith('"')) ||
+      (rawValue.startsWith("'") && !rawValue.endsWith("'"))
+    ) {
+      const result = readQuotedValue(lines, index, rawValue);
+      index = result.nextIndex;
+      process.env[key] = result.value;
+      continue;
+    }
+
+    if (/^-----BEGIN [^-]+-----$/.test(rawValue)) {
+      const result = readPemValue(lines, index, rawValue);
+      index = result.nextIndex;
+      process.env[key] = result.value;
       continue;
     }
 
