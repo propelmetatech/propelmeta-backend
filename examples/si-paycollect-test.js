@@ -19,6 +19,29 @@ function readPem(filePath) {
   return fs.readFileSync(path.resolve(filePath), 'utf8');
 }
 
+function normalizePem(value) {
+  return String(value || '').replace(/\\n/g, '\n').trim();
+}
+
+function isPemContent(value) {
+  return /^-----BEGIN [^-]+-----/.test(normalizePem(value));
+}
+
+function resolvePemValue(value, envName) {
+  if (isPemContent(value)) {
+    return normalizePem(value);
+  }
+
+  const resolvedPath = path.resolve(String(value || '').trim());
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(
+      `${envName} must be a PEM string or a readable file path. Missing: ${resolvedPath}`,
+    );
+  }
+
+  return normalizePem(readPem(resolvedPath));
+}
+
 function createMerchantTxnId() {
   return `${Date.now()}${Math.floor(Math.random() * 1000000)}`;
 }
@@ -47,13 +70,13 @@ async function main() {
   const merchantId = requireEnv('PAYGLOCAL_MERCHANT_ID');
   const privateKeyId = requireEnv('PAYGLOCAL_PRIVATE_KEY_ID');
   const publicKeyId = requireEnv('PAYGLOCAL_PUBLIC_KEY_ID');
-  const privateKeyPath = requireEnv('PAYGLOCAL_PRIVATE_KEY');
-  const publicKeyPath = requireEnv('PAYGLOCAL_PUBLIC_KEY');
+  const privateKeyValue = requireEnv('PAYGLOCAL_PRIVATE_KEY');
+  const publicKeyValue = requireEnv('PAYGLOCAL_PUBLIC_KEY');
   const endpoint = process.env.PAYGLOCAL_INITIATE_URL || 'https://api.uat.payglocal.in/gl/v1/payments/initiate/paycollect';
 
   const payload = buildPayload();
-  const publicKey = readPem(publicKeyPath);
-  const privateKey = readPem(privateKeyPath);
+  const publicKey = resolvePemValue(publicKeyValue, 'PAYGLOCAL_PUBLIC_KEY');
+  const privateKey = resolvePemValue(privateKeyValue, 'PAYGLOCAL_PRIVATE_KEY');
 
   const { jweToken, jwsToken } = await generateJWEAndJWS({
     payload,

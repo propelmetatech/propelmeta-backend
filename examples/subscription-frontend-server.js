@@ -66,6 +66,25 @@ function normalizePem(value) {
   return String(value || '').replace(/\\n/g, '\n').trim();
 }
 
+function isPemContent(value) {
+  return /^-----BEGIN [^-]+-----/.test(normalizePem(value));
+}
+
+function resolvePemValue(value, envName) {
+  if (isPemContent(value)) {
+    return normalizePem(value);
+  }
+
+  const resolvedPath = path.resolve(String(value || '').trim());
+  if (!fs.existsSync(resolvedPath)) {
+    throw new Error(
+      `${envName} must be a PEM string or a readable file path. Missing: ${resolvedPath}`,
+    );
+  }
+
+  return normalizePem(readPem(resolvedPath));
+}
+
 function parsePositiveInteger(value, fallbackValue) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -113,7 +132,7 @@ function getDefaultStartDate(startDayOfMonth = 4) {
 
 function parseAllowedOrigins(value) {
   return String(value || '')
-    .split(',')
+    .split(/[,\r\n]+/)
     .map((origin) => origin.trim())
     .filter(Boolean);
 }
@@ -403,13 +422,17 @@ const config = {
 function validateConfig() {
   const errors = [];
 
-  // if (!fs.existsSync(path.resolve(config.privateKeyPath))) {
-  //   errors.push(`PAYGLOCAL_PRIVATE_KEY does not exist: ${config.privateKeyPath}`);
-  // }
+  try {
+    resolvePemValue(config.privateKey, 'PAYGLOCAL_PRIVATE_KEY');
+  } catch (error) {
+    errors.push(error.message);
+  }
 
-  // if (!fs.existsSync(path.resolve(config.publicKeyPath))) {
-  //   errors.push(`PAYGLOCAL_PUBLIC_KEY does not exist: ${config.publicKeyPath}`);
-  // }
+  try {
+    resolvePemValue(config.publicKey, 'PAYGLOCAL_PUBLIC_KEY');
+  } catch (error) {
+    errors.push(error.message);
+  }
 
   if (!/^\d{8}$/.test(config.monthlyStartDate)) {
     errors.push('PAYGLOCAL_MONTHLY_START_DATE must be in YYYYMMDD format.');
@@ -465,10 +488,8 @@ function validateConfig() {
 
 validateConfig();
 
-// const privateKey = readPem(config.privateKeyPath);
-// const publicKey = readPem(config.publicKeyPath);
-const privateKey = normalizePem(config.privateKey);
-const publicKey = normalizePem(config.publicKey);
+const privateKey = resolvePemValue(config.privateKey, 'PAYGLOCAL_PRIVATE_KEY');
+const publicKey = resolvePemValue(config.publicKey, 'PAYGLOCAL_PUBLIC_KEY');
 const transactionStore = config.storeTransactions
   ? new TransactionStore(config.transactionStorePath)
   : null;
@@ -615,18 +636,6 @@ async function initiateSubscription(body) {
       privateKeyId: config.privateKeyId,
     });
 
-    console.log(
-      payload,
-      publicKey,
-      privateKey,
-      config.merchantId,
-      config.publicKeyId,
-      config.privateKeyId,
-      jweToken,
-      jwsToken
-
-    )
-
     console.log('Initiating subscription:', {
       merchantTxnId,
       tier,
@@ -644,24 +653,15 @@ async function initiateSubscription(body) {
       body: jweToken,
     });
 
-    console.log(response)
-console.log("Response Status:", response.status);
- 
-const rawBuffer = await response.arrayBuffer();
-
-const rawText = Buffer.from(rawBuffer).toString();
- 
-console.log("RAW BODY:", rawText);
- 
-const parsed = safeJsonParse(rawText);
-
-console.log("PARSED:", parsed);
-
-console.log("REDIRECT:", parsed?.data?.redirectUrl);
- 
-    
     const rawBody = await response.text();
-    const parsedBody = safeJsonParse(rawBody) || rawBody;   
+    const parsedBody = safeJsonParse(rawBody) || rawBody;
+
+    console.log('PayGlocal initiate response:', {
+      merchantTxnId,
+      status: response.status,
+      hasRedirectUrl: Boolean(parsedBody?.data?.redirectUrl),
+      body: parsedBody,
+    });
 
     if (!response.ok) {
       const errorMessage =
@@ -691,8 +691,6 @@ console.log("REDIRECT:", parsed?.data?.redirectUrl);
 
     const redirectUrl = parsedBody?.data?.redirectUrl;
     const statusUrl = parsedBody?.data?.statusUrl || null;
-console.log("Parsed Body:", parsedBody);
-console.log("Redirect URL:", parsedBody?.data?.redirectUrl);
     if (!redirectUrl) {
       if (transactionStore) {
         transactionStore.upsert({
@@ -830,6 +828,11 @@ async function handleRequest(request, response) {
 
   if (request.method === 'OPTIONS') {
     if (isApiRoute && requestOrigin && !corsOrigin) {
+      console.warn('Blocked CORS preflight request:', {
+        requestOrigin,
+        allowedOrigins: config.allowedOrigins,
+        path: url.pathname,
+      });
       sendJson(response, 403, { ok: false, message: 'Origin not allowed.' });
       return;
     }
@@ -841,6 +844,12 @@ async function handleRequest(request, response) {
   }
 
   if (isApiRoute && requestOrigin && !corsOrigin) {
+    console.warn('Blocked CORS request:', {
+      requestOrigin,
+      allowedOrigins: config.allowedOrigins,
+      method: request.method,
+      path: url.pathname,
+    });
     sendJson(response, 403, { ok: false, message: 'Origin not allowed.' });
     return;
   }
@@ -987,6 +996,7 @@ server.listen(config.port, config.host, () => {
     `Frontend should POST http://${config.host}:${config.port}/api/subscriptions/initiate`,
   );
   console.log(`Callback URL configured as: ${config.callbackUrl}`);
+  console.log(`Allowed frontend origins: ${config.allowedOrigins.join(', ')}`);
   console.log(
     `Transaction store: ${
       transactionStore ? config.transactionStorePath : 'disabled'
