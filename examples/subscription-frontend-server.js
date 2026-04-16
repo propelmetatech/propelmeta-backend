@@ -404,11 +404,11 @@ function validateConfig() {
   const errors = [];
 
   // if (!fs.existsSync(path.resolve(config.privateKeyPath))) {
-  //   errors.push(`PAYGLOCAL_PRIVATE_KEY_PATH does not exist: ${config.privateKeyPath}`);
+  //   errors.push(`PAYGLOCAL_PRIVATE_KEY does not exist: ${config.privateKeyPath}`);
   // }
 
   // if (!fs.existsSync(path.resolve(config.publicKeyPath))) {
-  //   errors.push(`PAYGLOCAL_PUBLIC_KEY_PATH does not exist: ${config.publicKeyPath}`);
+  //   errors.push(`PAYGLOCAL_PUBLIC_KEY does not exist: ${config.publicKeyPath}`);
   // }
 
   if (!/^\d{8}$/.test(config.monthlyStartDate)) {
