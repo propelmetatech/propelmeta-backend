@@ -12,7 +12,7 @@ const { TransactionStore } = require('../utils/transactionStore');
 loadEnv(path.resolve(__dirname, '../.env'));
 
 const DEFAULT_INITIATE_URL =
-  'https://api.uat.payglocal.in/gl/v1/payments/initiate/paycollect';
+  'https://api.prod.payglocal.in/gl/v1/payments/initiate/paycollect';
 const SUCCESS_STATUSES = new Set([
   'AUTHORIZED',
   'CAPTURED',
@@ -560,15 +560,15 @@ function buildSubscriptionPayload(merchantTxnId, billingCycle, chargeAmount) {
       totalAmount: chargeAmount,
       txnCurrency: config.txnCurrency,
     },
-    standingInstruction: {
-      data: {
-        amount: chargeAmount,
-        numberOfPayments,
-        frequency: standingFrequency,
-        type: config.standingType,
-        startDate,
-      },
-    },
+    // standingInstruction: {
+    //   data: {
+    //     amount: chargeAmount,
+    //     numberOfPayments,
+    //     frequency: standingFrequency,
+    //     type: config.standingType,
+    //     startDate,
+    //   },
+    // },
     merchantCallbackURL: config.callbackUrl,
   };
 }

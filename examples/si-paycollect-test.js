@@ -72,7 +72,7 @@ async function main() {
   const publicKeyId = requireEnv('PAYGLOCAL_PUBLIC_KEY_ID');
   const privateKeyValue = requireEnv('PAYGLOCAL_PRIVATE_KEY');
   const publicKeyValue = requireEnv('PAYGLOCAL_PUBLIC_KEY');
-  const endpoint = process.env.PAYGLOCAL_INITIATE_URL || 'https://api.uat.payglocal.in/gl/v1/payments/initiate/paycollect';
+  const endpoint = process.env.PAYGLOCAL_INITIATE_URL || 'https://api.prod.payglocal.in/gl/v1/payments/initiate/paycollect';
 
   const payload = buildPayload();
   const publicKey = resolvePemValue(publicKeyValue, 'PAYGLOCAL_PUBLIC_KEY');
